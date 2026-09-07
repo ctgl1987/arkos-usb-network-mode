@@ -1,0 +1,6 @@
+# Store the batch file byte-for-byte, CRLF included. With the usual
+# "text eol=crlf" git would keep LF in the blob and only fix it on checkout,
+# so anyone downloading the raw file from the web would get Unix endings.
+*.bat -text
+*.sh  text eol=lf
+*.md  text eol=lf
