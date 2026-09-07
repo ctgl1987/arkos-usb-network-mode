@@ -11,6 +11,10 @@ echo  ============================================================
 echo    ArkOS USB Network  -  Windows setup
 echo  ============================================================
 echo.
+echo   This script changes NOTHING on your PC. It is a guide
+echo   plus a connection test. Anything that needs setting up
+echo   is done by you, and it says where.
+echo.
 echo   FILE MODE (ssh / web / copy ROMs)
 echo   ---------------------------------
 echo   Nothing to configure on Windows.

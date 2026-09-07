@@ -55,8 +55,13 @@ across the board. The UDC state is the authority.
 ## Install
 
 **On the handheld** — copy `USB Network Mode.sh` to `/opt/system/`
-(or `/roms2/tools/` if you use the SD2 layout), make it executable, and it
-appears in the Options menu.
+(or `/roms2/tools/` if you use the SD2 layout) and make it executable:
+
+```sh
+chmod +x "/opt/system/USB Network Mode.sh"
+```
+
+It then shows up in the Options menu. No reboot needed.
 
 ```
 option 1  check compatibility     <- run this first
@@ -68,9 +73,31 @@ option 5  stop everything
 
 **On the PC**
 
-- Windows — run `setup-windows.bat` (guide + quick diagnostic).
-  Nothing to configure for file access.
-- Linux — `sudo ./setup-linux.sh` (creates two NetworkManager profiles).
+- Windows — run `setup-windows.bat`. **It does not change any setting.**
+  It is a walkthrough plus a connectivity test; the one thing Windows needs
+  configuring for (internet sharing) is done by hand, and the script tells
+  you where to click.
+- Linux — `sudo ./setup-linux.sh`. This one *does* change things: it names
+  the interface `arkos0`, stops NetworkManager from creating duplicate
+  profiles, adds a firewall workaround for Docker, and creates two network
+  profiles.
+
+### What is automatic and what is not
+
+| | Windows | Linux |
+|---|---|---|
+| Install the script on the handheld | by hand | by hand |
+| USB network driver | automatic | automatic |
+| Stable interface name | n/a | `setup-linux.sh` |
+| Avoid duplicate profiles | n/a | `setup-linux.sh` |
+| Docker firewall workaround | n/a | `setup-linux.sh` |
+| Network profiles | n/a | `setup-linux.sh` |
+| **File mode** (universal) | nothing to do | nothing to do |
+| **Internet sharing** | **by hand** (ICS, 6 clicks) | switch the profile on, by hand |
+
+The short version: for copying files you configure nothing on either OS.
+Only internet sharing needs a human, and on Linux the script has already
+prepared everything so it is one toggle.
 
 > Plug the cable into the **OTG port**, not the charge-only one, and use a
 > **data cable**. Charge-only cables leave you stuck at "connecting" forever
