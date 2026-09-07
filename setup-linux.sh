@@ -12,7 +12,42 @@
 # ==========================================================================
 set -e
 [ "$(id -u)" = 0 ] || { echo "Run with sudo:  sudo ./setup-linux.sh"; exit 1; }
-command -v nmcli >/dev/null || { echo "This machine does not use NetworkManager."; exit 1; }
+command -v nmcli >/dev/null || {
+  echo "This machine does not use NetworkManager, so this script has"
+  echo "nothing to configure. File mode still works: start universal"
+  echo "mode on the handheld and point your tools at 10.44.44.1."
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+#  Optional pieces. Neither is needed to copy files - that path works with no
+#  PC-side setup at all - but sharing the PC's internet quietly fails without
+#  them, in ways that are hard to trace back here.
+# ---------------------------------------------------------------------------
+HAVE_IPTABLES=1; HAVE_DNSMASQ=1
+command -v iptables >/dev/null || HAVE_IPTABLES=0
+command -v dnsmasq  >/dev/null || HAVE_DNSMASQ=0
+
+if [ "$HAVE_DNSMASQ" = 0 ]; then
+  echo "!! dnsmasq not found."
+  echo "   NetworkManager spawns it for shared connections, so internet"
+  echo "   mode will not work until you install it. File mode is fine."
+  echo ""
+fi
+if [ "$HAVE_IPTABLES" = 0 ]; then
+  echo "!! iptables not found."
+  echo "   Skipping the Docker workaround. If you do not run Docker you"
+  echo "   do not need it. If you do, internet sharing will be blocked"
+  echo "   and you will have to open the FORWARD chain yourself."
+  echo ""
+fi
+if systemctl is-active --quiet firewalld 2>/dev/null; then
+  echo "!! firewalld is running."
+  echo "   NetworkManager usually handles the shared connection through it"
+  echo "   without help. If internet mode gets an IP but no traffic, try:"
+  echo "     firewall-cmd --zone=trusted --add-interface=arkos0"
+  echo ""
+fi
 
 echo ">> 1/4  Naming the handheld's USB interface 'arkos0'..."
 # Without a fixed name the kernel picks things like enp0s20f0u1c2i1, which
@@ -31,6 +66,7 @@ cat > /etc/NetworkManager/conf.d/99-arkos-no-auto-default.conf << 'NMCONF'
 no-auto-default=arkos0
 NMCONF
 
+if [ "$HAVE_IPTABLES" = 1 ]; then
 echo ">> 3/4  Firewall fix (share internet even with Docker installed)..."
 # Docker sets the FORWARD chain policy to DROP, which silently kills
 # NetworkManager's shared-connection routing. These rules re-open it only
@@ -48,6 +84,9 @@ case "$2" in
 esac
 DISP
 chmod 755 /etc/NetworkManager/dispatcher.d/50-arkos-inet
+else
+echo ">> 3/4  Firewall fix SKIPPED (no iptables)"
+fi
 systemctl reload NetworkManager 2>/dev/null || true
 sleep 1
 

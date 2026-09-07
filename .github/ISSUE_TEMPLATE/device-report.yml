@@ -1,0 +1,73 @@
+name: Device report
+description: Tell us whether this works on your handheld (working or not, both help)
+title: "[device] "
+labels: ["device-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports of devices that **do not** work are just as useful as ones
+        that do. There is no public list of which clones can do USB device
+        mode, and this is how we build one.
+
+        Run **option 1 (check compatibility)** on the handheld first. The
+        report is also saved to `/tmp/usbnet-compat.txt` if you would rather
+        copy it over SSH than retype it.
+
+  - type: input
+    id: model
+    attributes:
+      label: Device
+      description: What it is sold as, plus the model line from the report
+      placeholder: "R36S clone, board says 'R36S Clone Type5'"
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware
+      placeholder: "ArkOS4Clone 20260825"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: verdict
+    attributes:
+      label: What did option 1 say?
+      options:
+        - "SUPPORTED"
+        - "SHOULD WORK, BUT..."
+        - "NOT SUPPORTED"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reality
+    attributes:
+      label: And does it actually work?
+      options:
+        - "Yes, files and internet both"
+        - "Files only, internet sharing fails"
+        - "No, never connects"
+        - "Have not tried yet"
+    validations:
+      required: true
+
+  - type: textarea
+    id: report
+    attributes:
+      label: Full compatibility report
+      description: Paste the whole thing from option 1, including the verdict
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: |
+        Which port you used, what cable, whether you had to change anything.
+        If it did not work, say whether you are certain the cable carries data
+        (test it with a phone or another device).

@@ -1,0 +1,56 @@
+name: Something is broken
+description: The script errors out, hangs, or does the wrong thing
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For "it does not connect on my device", please use the **Device
+        report** template instead - that is usually hardware, not a bug.
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it happen?
+      options:
+        - "Option 1 - compatibility check"
+        - "Option 2 - universal mode"
+        - "Option 3 - internet mode"
+        - "Option 4 - Remote Services"
+        - "Option 5 - stop"
+        - "Option 6 - info"
+        - "setup-linux.sh"
+        - "setup-windows.bat"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: report
+    attributes:
+      label: Compatibility report (option 1)
+      description: Helps rule out the device itself
+      render: text
+
+  - type: textarea
+    id: errors
+    attributes:
+      label: Any error text
+      description: |
+        If the screen goes blank or a dialog vanishes, run the script over SSH
+        instead so you can see what bash prints:
+        `bash "/opt/system/USB Network Mode.sh"`
+      render: shell
+
+  - type: input
+    id: pc
+    attributes:
+      label: PC side
+      placeholder: "Windows 11 / Fedora 43 with NetworkManager"

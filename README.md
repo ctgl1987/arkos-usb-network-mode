@@ -153,6 +153,25 @@ Internet mode: the PC assigns the IP — `192.168.137.x` on Windows,
 
 ---
 
+## Help build the compatibility list
+
+There is no public list of which handhelds can actually do USB device mode.
+Vendors do not document it, identical-looking boards behave differently, and
+the failure looks the same as a bad cable.
+
+If you run **option 1**, please open a
+[device report](../../issues/new?template=device-report.yml) with the output —
+**especially if it does not work**. A confirmed "no" saves the next person
+hours of swapping cables and reflashing firmware.
+
+The report is also written to `/tmp/usbnet-compat.txt`, so you can copy it
+over SSH instead of retyping it from the screen.
+
+| Device | Firmware | Result |
+|---|---|---|
+| R36S clone (board reports `R36S Clone Type5`) | ArkOS4Clone | works, files + internet |
+| R35S | AeolusUX MultiPanel | never connects — data lines not wired for device mode |
+
 ## Notes
 
 The gadget is loaded with a **fixed MAC address** and identifies itself as
@@ -168,3 +187,7 @@ it is up.
 
 Everything runs from RAM. Nothing is installed permanently on the handheld,
 and option 5 unloads the module and puts the OTG port back to normal.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
