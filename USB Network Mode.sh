@@ -95,175 +95,156 @@ Status() {
 #  SoC in device mode. Steps 1-3 pass, step 4 never does.
 # ---------------------------------------------------------------------------
 CompatCheck() {
-  dialog --backtitle "$BACKTITLE" --infobox "Checking compatibility...\nplease wait" 5 $width > $CURR_TTY
+  Busy "Checking compatibility..."
 
-  local fatal=0 warn=0
-  : > "$REPORT"
-  {
-    echo "USB GADGET COMPATIBILITY REPORT"
-    echo "==============================="
-    echo ""
-    MODEL=$(cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0')
-    echo "Device : ${MODEL:-unknown}"
-    echo "Kernel : $(uname -r)"
-    echo ""
-  } >> "$REPORT"
+  local fatal=0 warn=0 body="/tmp/usbnet-compat.body"
+  : > "$body"
 
   # --- 1. kernel modules --------------------------------------------------
-  echo "1. KERNEL MODULES" >> "$REPORT"
+  {
+  echo "1. KERNEL MODULES"
+  } >> "$body"
   local mods_ok=0
   if lsmod | grep -qw g_ether || modinfo g_ether >/dev/null 2>&1; then
-    echo "   [OK]   g_ether available" >> "$REPORT"; mods_ok=1
+    echo "   [OK] g_ether" >> "$body"; mods_ok=1
   else
-    echo "   [--]   g_ether NOT found" >> "$REPORT"
+    echo "   [--] g_ether NOT found" >> "$body"
   fi
   for m in libcomposite usb_f_rndis usb_f_ecm; do
     if modinfo "$m" >/dev/null 2>&1; then
-      echo "   [OK]   $m available" >> "$REPORT"; mods_ok=1
+      echo "   [OK] $m" >> "$body"; mods_ok=1
     else
-      echo "   [--]   $m not found" >> "$REPORT"
+      echo "   [--] $m not found" >> "$body"
     fi
   done
-  [ "$mods_ok" = 0 ] && { echo "   >> FATAL: no USB gadget driver in this kernel." >> "$REPORT"; fatal=1; }
-  echo "" >> "$REPORT"
+  [ "$mods_ok" = 0 ] && { echo "   >> FATAL: no gadget driver in kernel" >> "$body"; fatal=1; }
+  echo "" >> "$body"
 
   # --- 2. UDC -------------------------------------------------------------
-  echo "2. USB DEVICE CONTROLLER (UDC)" >> "$REPORT"
-  local udcs
+  echo "2. USB DEVICE CONTROLLER" >> "$body"
+  local udcs ustate="" link="unknown"
   udcs=$(ls /sys/class/udc/ 2>/dev/null)
   if [ -n "$udcs" ]; then
     for u in $udcs; do
-      echo "   [OK]   $u" >> "$REPORT"
-      echo "          state: $(cat /sys/class/udc/$u/state 2>/dev/null)" >> "$REPORT"
-      local drv
-      drv=$(cat /sys/class/udc/$u/function 2>/dev/null)
-      [ -n "$drv" ] && echo "          bound: $drv" >> "$REPORT"
+      ustate=$(cat "/sys/class/udc/$u/state" 2>/dev/null)
+      echo "   [OK] $u" >> "$body"
+      echo "        state: $ustate" >> "$body"
+      case "$ustate" in
+        configured|addressed) link="up" ;;
+        "not attached"|"")    [ "$link" = "unknown" ] && link="down" ;;
+        *)                    [ "$link" = "unknown" ] && link="partial" ;;
+      esac
     done
   else
-    echo "   [--]   no UDC present" >> "$REPORT"
-    echo "   >> FATAL: this port cannot act as a USB device." >> "$REPORT"
-    echo "      Usually means the SoC USB is wired host-only." >> "$REPORT"
+    echo "   [--] no UDC present" >> "$body"
+    echo "   >> FATAL: port cannot be a USB device." >> "$body"
+    echo "      SoC USB is wired host-only." >> "$body"
     fatal=1
   fi
-  echo "" >> "$REPORT"
+  echo "" >> "$body"
 
   # --- 3. dr_mode ---------------------------------------------------------
-  echo "3. DEVICE TREE dr_mode" >> "$REPORT"
+  echo "3. DEVICE TREE dr_mode" >> "$body"
   local found=0 seen_nodes=""
   for f in /sys/firmware/devicetree/base/*usb*/dr_mode /proc/device-tree/*usb*/dr_mode; do
     [ -e "$f" ] || continue
     local m node
     m=$(tr -d '\0' < "$f")
     node=$(basename "$(dirname "$f")")
-    # /sys/firmware/devicetree and /proc/device-tree are the same tree
+    # both paths are the same tree, do not list twice
     case " $seen_nodes " in *" $node "*) continue ;; esac
     seen_nodes="$seen_nodes $node"
     found=1
     case "$m" in
-      otg|peripheral) echo "   [OK]   $node = $m" >> "$REPORT" ;;
-      host)           echo "   [!!]   $node = host  (gadget disabled)" >> "$REPORT"; warn=1 ;;
-      *)              echo "   [??]   $node = $m" >> "$REPORT" ;;
+      otg|peripheral) echo "   [OK] $node = $m" >> "$body" ;;
+      host)           echo "   [!!] $node = host" >> "$body"
+                      echo "        gadget disabled, needs new DTB" >> "$body"; warn=1 ;;
+      *)              echo "   [??] $node = $m" >> "$body" ;;
     esac
   done
-  if [ "$found" = 0 ]; then
-    echo "   [??]   dr_mode not exposed by this kernel" >> "$REPORT"
-  fi
-  echo "" >> "$REPORT"
+  [ "$found" = 0 ] && echo "   [??] not exposed by this kernel" >> "$body"
+  echo "" >> "$body"
 
-  # --- 4. VBUS / cable ----------------------------------------------------
-  echo "4. CABLE / LINK DETECTION" >> "$REPORT"
-  # The UDC state is the authority here. extcon is NOT reliable on every
-  # board: on an RK3326 clone the gadget can be fully enumerated and
-  # serving SSH while extcon still reports USB=0 across the board. Trust
-  # the controller, and print extcon only as extra context.
-  local link="unknown" ustate=""
-  for u in $(ls /sys/class/udc/ 2>/dev/null); do
-    ustate=$(cat "/sys/class/udc/$u/state" 2>/dev/null)
-    case "$ustate" in
-      configured|addressed) link="up" ;;
-      "not attached"|"")    [ "$link" = "unknown" ] && link="down" ;;
-      *)                    [ "$link" = "unknown" ] && link="partial" ;;
-    esac
-  done
+  # --- 4. link ------------------------------------------------------------
+  # The UDC state is the authority. extcon is NOT reliable: on RK3326 clones
+  # the gadget can be enumerated and serving SSH while extcon reads USB=0.
+  echo "4. CABLE / LINK" >> "$body"
   case "$link" in
     up)
-      echo "   [OK]   link is up (UDC state: $ustate)" >> "$REPORT"
-      echo "          a host is connected and enumerated" >> "$REPORT" ;;
+      echo "   [OK] link up ($ustate)" >> "$body"
+      echo "        a host is connected" >> "$body" ;;
     partial)
-      echo "   [!!]   UDC state: $ustate" >> "$REPORT"
-      echo "          cable seen but not enumerated yet" >> "$REPORT"
-      warn=1 ;;
+      echo "   [!!] $ustate" >> "$body"
+      echo "        cable seen, not enumerated" >> "$body"; warn=1 ;;
     down)
-      echo "   [--]   no host connected (UDC: $ustate)" >> "$REPORT"
-      echo "          This is normal if no cable is plugged" >> "$REPORT"
-      echo "          in. Plug a DATA cable into the OTG" >> "$REPORT"
-      echo "          port and run this check again." >> "$REPORT"
-      echo "          If it still says this with a known" >> "$REPORT"
-      echo "          good data cable, the board does not" >> "$REPORT"
-      echo "          wire the data lines for device mode" >> "$REPORT"
-      echo "          and this will never work." >> "$REPORT" ;;
+      echo "   [--] no host connected" >> "$body"
+      echo "        Normal with no cable plugged." >> "$body"
+      echo "        Plug a DATA cable in the OTG" >> "$body"
+      echo "        port and check again. If it" >> "$body"
+      echo "        still says this, the board" >> "$body"
+      echo "        does not wire the data lines" >> "$body"
+      echo "        and this cannot ever work." >> "$body" ;;
     *)
-      echo "   [??]   no UDC to query" >> "$REPORT" ;;
+      echo "   [??] no UDC to query" >> "$body" ;;
   esac
-  echo "" >> "$REPORT"
-  echo "   extcon (informational, unreliable):" >> "$REPORT"
+  echo "" >> "$body"
+  echo "   extcon (unreliable, for info):" >> "$body"
   local seen=0
   for e in /sys/class/extcon/*; do
     [ -e "$e/state" ] || continue
     seen=1
-    tr '\n' ' ' < "$e/state" | fold -w 46 | sed 's/^/      /' >> "$REPORT"
-    echo "" >> "$REPORT"
+    tr '\n' ' ' < "$e/state" | fold -sw 38 | sed 's/^/     /' >> "$body"
+    echo "" >> "$body"
   done
-  [ "$seen" = 0 ] && echo "      none present" >> "$REPORT"
-  echo "" >> "$REPORT"
+  [ "$seen" = 0 ] && echo "     none present" >> "$body"
+  echo "" >> "$body"
 
-  # --- 5. userland tools --------------------------------------------------
-  echo "5. REQUIRED TOOLS" >> "$REPORT"
+  # --- 5/6. tools ---------------------------------------------------------
+  echo "5. REQUIRED TOOLS" >> "$body"
   for c in ip dialog dnsmasq dhclient; do
-    if command -v "$c" >/dev/null 2>&1; then
-      echo "   [OK]   $c" >> "$REPORT"
-    else
-      echo "   [--]   $c MISSING" >> "$REPORT"; fatal=1
-    fi
+    command -v "$c" >/dev/null 2>&1 \
+      && echo "   [OK] $c" >> "$body" \
+      || { echo "   [--] $c MISSING" >> "$body"; fatal=1; }
   done
-  echo "" >> "$REPORT"
-  echo "6. OPTIONAL (Remote Services)" >> "$REPORT"
+  echo "" >> "$body"
+  echo "6. OPTIONAL (Remote Services)" >> "$body"
   for c in filebrowser smbd; do
     command -v "$c" >/dev/null 2>&1 \
-      && echo "   [OK]   $c" >> "$REPORT" \
-      || echo "   [--]   $c missing (option 4 wont work)" >> "$REPORT"
+      && echo "   [OK] $c" >> "$body" \
+      || echo "   [--] $c missing, opt 4 wont work" >> "$body"
   done
-  echo "" >> "$REPORT"
 
-  # --- verdict ------------------------------------------------------------
+  # --- compose: verdict FIRST, details after ------------------------------
+  local MODEL
+  MODEL=$(cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0')
   {
-    echo "==============================="
     if [ "$fatal" = 1 ]; then
-      echo "VERDICT: NOT SUPPORTED"
+      echo "  VERDICT: NOT SUPPORTED"
       echo ""
-      echo "Something required is missing. See the"
-      echo "FATAL lines above. A different firmware"
-      echo "may help if it is only a missing module."
+      echo "  Something required is missing."
+      echo "  See the FATAL lines below."
     elif [ "$warn" = 1 ]; then
-      echo "VERDICT: SHOULD WORK, BUT..."
+      echo "  VERDICT: SHOULD WORK, BUT..."
       echo ""
-      echo "The software side is fine. The warnings"
-      echo "above are about the cable or the port."
-      echo "Check that you are using a DATA cable in"
-      echo "the OTG port, then run this again."
+      echo "  Software side is fine. Warnings"
+      echo "  below are about cable or port."
     else
-      echo "VERDICT: SUPPORTED"
+      echo "  VERDICT: SUPPORTED"
       echo ""
-      echo "Everything needed is present."
-      echo "Go ahead and use option 2 or 3."
+      echo "  Everything needed is present."
+      echo "  Use option 2 or 3."
     fi
-    echo "==============================="
+    echo "  ------------------------------"
+    echo "  ${MODEL:-unknown}"
+    echo "  kernel $(uname -r)"
+    echo "  ------------------------------"
     echo ""
-    echo "Report saved to $REPORT"
-  } >> "$REPORT"
+    cat "$body"
+  } > "$REPORT"
+  rm -f "$body"
 
   dialog --backtitle "$BACKTITLE" --title " Compatibility " \
-         --textbox "$REPORT" 19 56 > $CURR_TTY
+         --textbox "$REPORT" 19 46 > $CURR_TTY
 }
 
 # Shows a one-line progress box. Several of the steps below take a few
@@ -379,12 +360,49 @@ StopAll() {
 }
 
 Info() {
-  LEASES=$(awk '{h=($4=="*")?$2:$4; printf "  %s (%s)\\n", $3, h}' /tmp/usbnet.leases 2>/dev/null)
+  local IP GW RSTATE MODE txt
+  IP=$(ip -4 addr show usb0 2>/dev/null | grep -oP 'inet \K[0-9.]+')
   GW=$(ip route show dev usb0 2>/dev/null | grep -oP 'default via \K[0-9.]+')
-  EXTRA=""
-  [ "$(Mode)" = "INTERNET" ] && EXTRA="\nGateway (PC): ${GW:-?}"
-  [ "$(Mode)" = "UNIVERSAL" ] && EXTRA="\nLeases handed out:\n${LEASES:-  none}"
-  dialog --backtitle "$BACKTITLE" --msgbox "$(Status)$EXTRA" 13 $width > $CURR_TTY
+  RSTATE=$(RS)
+  MODE=$(Mode)
+
+  case "$MODE" in
+    OFF)       txt="Status:     OFF" ;;
+    UNIVERSAL) txt="Status:     ON (universal)" ;;
+    INTERNET)  txt="Status:     ON (internet via PC)" ;;
+  esac
+  txt="$txt\nDevice IP:  ${IP:-none}"
+  # the gateway only means anything when the PC is the one routing
+  if [ "$MODE" = "INTERNET" ]; then
+    txt="$txt\nGateway:    ${GW:-none}"
+  fi
+  txt="$txt\nweb/smb:    $RSTATE"
+
+  # connected PCs, only useful when we are the DHCP server
+  if [ "$MODE" = "UNIVERSAL" ]; then
+    local n
+    n=$(ip neigh show dev usb0 2>/dev/null | grep -vc FAILED)
+    txt="$txt\nPCs seen:   $n"
+  fi
+
+  # the whole point of the tool: the addresses to type on the PC
+  if [ -n "$IP" ]; then
+    txt="$txt\n\n--- Connect from the PC ---"
+    txt="$txt\nSSH:   ssh ark@$IP"
+    txt="$txt\nSFTP:  sftp://ark@$IP"
+    if [ "$RSTATE" = "ON" ]; then
+      txt="$txt\nWeb:   http://$IP"
+      txt="$txt\nSMB:   smb://$IP"
+      # 8 backslashes: bash halves them, then printf %b halves again
+      txt="$txt\nWin:   \\\\\\\\$IP"
+    else
+      txt="$txt\n(enable option 4 for web/smb)"
+    fi
+    txt="$txt\n\nuser / pass:  ark / ark"
+  fi
+
+  dialog --backtitle "$BACKTITLE" --title " Info " --no-collapse \
+         --msgbox "$txt" 20 46 > $CURR_TTY
 }
 
 MainMenu() {
