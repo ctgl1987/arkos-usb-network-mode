@@ -88,12 +88,20 @@ option 5  stop everything
 |---|---|---|
 | Install the script on the handheld | by hand | by hand |
 | USB network driver | automatic | automatic |
-| Stable interface name | n/a | `setup-linux.sh` |
-| Avoid duplicate profiles | n/a | `setup-linux.sh` |
-| Docker firewall workaround | n/a | `setup-linux.sh` |
-| Network profiles | n/a | `setup-linux.sh` |
+| Stable interface name | automatic † | `setup-linux.sh` † |
+| Avoid duplicate profiles | automatic † | `setup-linux.sh` † |
+| Docker firewall workaround | not needed | `setup-linux.sh` |
+| Network profiles | not needed | `setup-linux.sh` |
 | **File mode** (universal) | nothing to do | nothing to do |
 | **Internet sharing** | **by hand** (ICS, 6 clicks) | switch the profile on, by hand |
+
+† Both operating systems identify the handheld by its MAC address, so a
+random one makes them invent a fresh adapter or profile on every reconnect
+— `Ethernet 2`, `Ethernet 3`… on Windows, `Wired connection 2`, `3`… on
+Linux. The handheld avoids that by advertising a fixed MAC and identity,
+which is why Windows needs nothing here. Linux needs one extra piece
+because the kernel also names interfaces after the USB bus path, and that
+changes with the port you plug into.
 
 The short version: for copying files you configure nothing on either OS.
 Only internet sharing needs a human, and on Linux the script has already
@@ -140,6 +148,8 @@ Internet mode: the PC assigns the IP — `192.168.137.x` on Windows,
 | Web page dead but SSH works | turn on option 4 |
 | Worked once, not any more | option 5, then start again |
 | Check reports no link with a good data cable | the board does not wire data lines for device mode — nothing to be done in software |
+| A pile of `Ethernet 4`, `Wired connection 5`… adapters | left over from an earlier attempt with a stock `g_ether` and its random MAC. Harmless, but delete them so the right one is obvious |
+| Link comes up but no DHCP, address is `169.254.x` | the PC picked a leftover profile from the case above. Remove it, or on Linux re-run `setup-linux.sh` |
 
 ---
 
