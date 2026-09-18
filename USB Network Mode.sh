@@ -201,11 +201,23 @@ CompatCheck() {
 
   # --- 5/6. tools ---------------------------------------------------------
   echo "5. REQUIRED TOOLS" >> "$body"
-  for c in ip dialog dnsmasq dhclient; do
+  for c in ip dialog dnsmasq; do
     command -v "$c" >/dev/null 2>&1 \
       && echo "   [OK] $c" >> "$body" \
       || { echo "   [--] $c MISSING" >> "$body"; fatal=1; }
   done
+  # A DHCP client is only needed for internet mode, and any of the three does
+  # the job. Its absence is not fatal: internet mode then falls back to the
+  # static address the PC end is known to use.
+  dhcp=$(DhcpClient)
+  if [ -n "$dhcp" ]; then
+    echo "   [OK] dhcp client ($dhcp)" >> "$body"
+  else
+    echo "   [~~] no dhcp client found" >> "$body"
+    echo "        (dhclient/dhcpcd/udhcpc)" >> "$body"
+    echo "        internet mode will fall back" >> "$body"
+    echo "        to a static address - still works" >> "$body"
+  fi
   echo "" >> "$body"
   echo "6. OPTIONAL (Remote Services)" >> "$body"
   for c in filebrowser smbd; do
@@ -254,6 +266,76 @@ Busy() {
   dialog --backtitle "$BACKTITLE" --infobox "$1" 5 $width > $CURR_TTY
 }
 
+# --- DHCP client handling -------------------------------------------------
+# isc-dhcp-client (dhclient) is deprecated since Debian 13 "trixie": ISC
+# dropped the client, so images built on that base -- dArkOSen among them --
+# ship dhcpcd or busybox udhcpc instead, or no DHCP client at all. We take
+# whichever is present and fall back to a static address when there is none.
+DHCP_CLIENTS="dhclient dhcpcd udhcpc"
+
+DhcpClient() {
+  for c in $DHCP_CLIENTS; do
+    command -v "$c" >/dev/null 2>&1 && { echo "$c"; return 0; }
+  done
+  return 1
+}
+
+KillDhcp() {
+  for c in $DHCP_CLIENTS; do
+    sudo pkill -f "$c.*usb0" 2>/dev/null
+  done
+}
+
+UsbIp() { ip -4 addr show usb0 2>/dev/null | grep -oP 'inet \K[0-9.]+'; }
+
+# Ask the PC for an address with whatever client this firmware has.
+AskForIp() {
+  case "$(DhcpClient)" in
+    dhclient) sudo timeout 20 dhclient -1 usb0 2>/dev/null ;;
+    dhcpcd)   sudo timeout 20 dhcpcd -1 usb0 2>/dev/null ;;
+    udhcpc)
+      # busybox udhcpc never touches the interface itself: it fetches the
+      # lease and hands it to a helper script. With no script the lease is
+      # obtained and thrown away, so point it at the usual location. If that
+      # is missing too the static fallback below still saves the day.
+      script=""
+      for cand in /usr/share/udhcpc/default.script /etc/udhcpc/default.script \
+                  /usr/share/busybox/udhcpc/default.script; do
+        [ -x "$cand" ] && { script="$cand"; break; }
+      done
+      if [ -n "$script" ]; then
+        sudo timeout 20 udhcpc -i usb0 -n -q -t 5 -s "$script" 2>/dev/null
+      else
+        sudo timeout 20 udhcpc -i usb0 -n -q -t 5 2>/dev/null
+      fi
+      ;;
+    *)        return 1 ;;
+  esac
+}
+
+# Last resort: no DHCP client at all. The PC end is a known address -- 10.42.0.1
+# when Linux shares through NetworkManager, 192.168.137.1 when Windows shares
+# through ICS -- so we claim the .2 of each subnet in turn and keep the one
+# whose gateway answers.
+StaticIp() {
+  for pair in "10.42.0.2/24 10.42.0.1" "192.168.137.2/24 192.168.137.1"; do
+    set -- $pair
+    sudo ip addr flush dev usb0 2>/dev/null
+    sudo ip addr add "$1" dev usb0 2>/dev/null
+    # -I usb0: the reply must come back through the gadget, otherwise a
+    # route that already exists elsewhere (wifi, ethernet) can answer for
+    # the same address and we would keep an address that leads nowhere.
+    if sudo ping -I usb0 -c 1 -W 2 "$2" >/dev/null 2>&1; then
+      sudo ip route add default via "$2" dev usb0 2>/dev/null
+      grep -q '^nameserver' /etc/resolv.conf 2>/dev/null \
+        || echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf >/dev/null
+      return 0
+    fi
+  done
+  sudo ip addr flush dev usb0 2>/dev/null
+  return 1
+}
+
 LoadGadget() {
   Busy "Loading USB gadget module..."
   sudo modprobe g_ether dev_addr=42:61:72:6b:6f:53 host_addr=42:61:72:6b:6f:54 iProduct=R36S iManufacturer=ArkOS
@@ -266,7 +348,7 @@ LoadGadget() {
 }
 
 StartUniversal() {
-  sudo pkill -f "dhclient.*usb0" 2>/dev/null
+  KillDhcp
   sudo kill "$(cat /tmp/dnsmasq-usbnet.pid 2>/dev/null)" 2>/dev/null
   LoadGadget || return
   Busy "Configuring interface..."
@@ -287,14 +369,19 @@ StartUniversal() {
 }
 
 StartInternet() {
-  sudo pkill -f "dhclient.*usb0" 2>/dev/null
+  KillDhcp
   sudo kill "$(cat /tmp/dnsmasq-usbnet.pid 2>/dev/null)" 2>/dev/null
   LoadGadget || return
   sudo ip addr flush dev usb0 2>/dev/null
   sudo ip link set usb0 up
   dialog --backtitle "$BACKTITLE" --infobox "Asking the PC for an IP...\n(the PC must ALREADY be\nsharing its connection)" 6 $width > $CURR_TTY
-  sudo timeout 20 dhclient -1 usb0 2>/dev/null
-  IP=$(ip -4 addr show usb0 2>/dev/null | grep -oP 'inet \K[0-9.]+')
+  AskForIp
+  IP=$(UsbIp)
+  VIA=""
+  if [ -z "$IP" ]; then
+    # no client, or the client got nothing: try the known PC addresses
+    StaticIp && IP=$(UsbIp) && VIA="\nAddress: static (no DHCP client)"
+  fi
   if [ -z "$IP" ]; then
     dialog --backtitle "$BACKTITLE" --msgbox "No IP received.\n\nTurn on connection sharing\non the PC, then retry here." 9 $width > $CURR_TTY
     return
@@ -306,7 +393,7 @@ StartInternet() {
   else
     NET="Internet: NO ROUTE (check the PC)"
   fi
-  dialog --backtitle "$BACKTITLE" --msgbox "INTERNET MODE ACTIVE\n\nDevice IP: $IP\n$NET\n\nssh ark@$IP (pass: ark)" 11 $width > $CURR_TTY
+  dialog --backtitle "$BACKTITLE" --msgbox "INTERNET MODE ACTIVE\n\nDevice IP: $IP$VIA\n$NET\n\nssh ark@$IP (pass: ark)" 11 $width > $CURR_TTY
 }
 
 ServicesOn() {
@@ -351,7 +438,7 @@ StopAll() {
   sudo systemctl stop smbd 2>/dev/null
   sudo systemctl stop nmbd 2>/dev/null
   sudo pkill -x filebrowser 2>/dev/null
-  sudo pkill -f "dhclient.*usb0" 2>/dev/null
+  KillDhcp
   sudo kill "$(cat /tmp/dnsmasq-usbnet.pid 2>/dev/null)" 2>/dev/null
   sudo ip addr flush dev usb0 2>/dev/null
   sudo ip link set usb0 down 2>/dev/null
