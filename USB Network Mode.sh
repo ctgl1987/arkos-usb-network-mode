@@ -105,8 +105,13 @@ CompatCheck() {
   echo "1. KERNEL MODULES"
   } >> "$body"
   local mods_ok=0
-  if lsmod | grep -qw g_ether || modinfo g_ether >/dev/null 2>&1; then
-    echo "   [OK] g_ether" >> "$body"; mods_ok=1
+  # "loaded" and "available" are very different things when the gadget
+  # refuses to come up: the module can sit on disk and still fail to bind,
+  # so do not let a single [OK] cover both cases.
+  if lsmod | grep -qw g_ether; then
+    echo "   [OK] g_ether (loaded)" >> "$body"; mods_ok=1
+  elif modinfo g_ether >/dev/null 2>&1; then
+    echo "   [OK] g_ether (available, not loaded)" >> "$body"; mods_ok=1
   else
     echo "   [--] g_ether NOT found" >> "$body"
   fi
