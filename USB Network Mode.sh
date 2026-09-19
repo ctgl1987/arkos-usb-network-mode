@@ -196,13 +196,26 @@ CompatCheck() {
       echo "   [!!] $ustate" >> "$body"
       echo "        cable seen, not enumerated" >> "$body"; warn=1 ;;
     down)
-      echo "   [--] no host connected" >> "$body"
-      echo "        Normal with no cable plugged." >> "$body"
-      echo "        Plug a DATA cable in the OTG" >> "$body"
-      echo "        port and check again. If it" >> "$body"
-      echo "        still says this, the board" >> "$body"
-      echo "        does not wire the data lines" >> "$body"
-      echo "        and this cannot ever work." >> "$body" ;;
+      # The controller only runs its state machine once a gadget is bound to
+      # it, so with no gadget loaded it reports "not attached" even with a
+      # perfect cable in the port. Saying "the board does not wire the data
+      # lines" there would blame the hardware for our own idle state.
+      if ! ip link show usb0 >/dev/null 2>&1; then
+        echo "   [??] cannot tell yet" >> "$body"
+        echo "        The controller only sees a host" >> "$body"
+        echo "        once the gadget is loaded, and it" >> "$body"
+        echo "        is not. Turn on option 2 or 3," >> "$body"
+        echo "        then run this check again." >> "$body"
+      else
+        echo "   [--] no host connected" >> "$body"
+        echo "        Normal with no cable plugged." >> "$body"
+        echo "        Plug a DATA cable in the OTG" >> "$body"
+        echo "        port and check again. If it" >> "$body"
+        echo "        still says this with the gadget" >> "$body"
+        echo "        running, the board does not wire" >> "$body"
+        echo "        the data lines and this cannot" >> "$body"
+        echo "        ever work." >> "$body"
+      fi ;;
     *)
       echo "   [??] no UDC to query" >> "$body" ;;
   esac
