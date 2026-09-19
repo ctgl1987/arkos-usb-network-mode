@@ -338,13 +338,26 @@ StaticIp() {
 
 LoadGadget() {
   Busy "Loading USB gadget module..."
-  sudo modprobe g_ether dev_addr=42:61:72:6b:6f:53 host_addr=42:61:72:6b:6f:54 iProduct=R36S iManufacturer=ArkOS
+  err=$(sudo modprobe g_ether dev_addr=42:61:72:6b:6f:53 host_addr=42:61:72:6b:6f:54 iProduct=R36S iManufacturer=ArkOS 2>&1)
   sleep 2
-  if ! ip link show usb0 > /dev/null 2>&1; then
-    dialog --backtitle "$BACKTITLE" --msgbox "ERROR: usb0 did not appear.\n\nRun option 1 (compatibility\ncheck) to find out why." 9 $width > $CURR_TTY
-    return 1
+  ip link show usb0 > /dev/null 2>&1 && return 0
+
+  # Work out WHY instead of sending the user off to another screen. The three
+  # cases look identical from here but need completely different answers.
+  if [ -z "$(ls /sys/class/udc/ 2>/dev/null)" ]; then
+    why="No USB device controller.\nThis board cannot act as a\nUSB device at all - usually\ndr_mode is set to host."
+  elif ! modinfo g_ether >/dev/null 2>&1; then
+    why="g_ether is not built into\nthis kernel. Some custom\nfirmware ships without it."
+  elif lsmod 2>/dev/null | grep -q '^g_ether'; then
+    why="g_ether loaded but usb0 never\nappeared. Another gadget may\nalready hold the controller."
+  elif [ -n "$err" ]; then
+    why="modprobe failed:\n${err:0:120}"
+  else
+    why="Unknown. Run option 1 for the\nfull report."
   fi
-  return 0
+
+  dialog --backtitle "$BACKTITLE" --msgbox "ERROR: usb0 did not appear.\n\n$why" 13 $width > $CURR_TTY
+  return 1
 }
 
 StartUniversal() {
