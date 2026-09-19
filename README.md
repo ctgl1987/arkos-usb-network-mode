@@ -59,16 +59,17 @@ only one that works from Windows. Power the handheld off, take the card
 out and plug it into a PC.
 
 The card has three partitions. Windows shows you two of them: the small
-`BOOT` one and the big `ROMS` one. Open `ROMS` and drop
-`USB Network Mode.sh` into its `tools/` folder (`custom/` also works if
-your firmware has one). That is all — the partition is exFAT and gets
-mounted with `fmask=0000`, so the file is already executable and there is
-nothing to `chmod`.
+`BOOT` one and the big ROMs one — labelled `EASYROMS` on ArkOS and
+dArkOSen. Open it and drop `USB Network Mode.sh` into its `tools/` folder
+(`custom/` also works if your firmware has one). That is all — the
+partition is exFAT and gets mounted with `fmask=0000`, so the file is
+already executable and there is nothing to `chmod`.
 
 Do not go looking for `/opt/system` from Windows: that path lives on the
-ext4 root partition, which Windows cannot read, and you would need extra
-software to get at it. The `tools/` folder you can reach is the same one
-the handheld shows in its menu.
+Linux root partition, which Windows cannot read whatever it is formatted
+as — ext4 on ArkOS, btrfs on dArkOSen — and you would need extra software
+to get at it. The `tools/` folder you can reach is the same one the
+handheld shows in its menu.
 
 **Over the network** — once USB networking works you can skip the card
 reader and copy straight to the handheld:
