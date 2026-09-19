@@ -112,6 +112,14 @@ CompatCheck() {
     echo "   [OK] g_ether (loaded)" >> "$body"; mods_ok=1
   elif modinfo g_ether >/dev/null 2>&1; then
     echo "   [OK] g_ether (available, not loaded)" >> "$body"; mods_ok=1
+    # A module only loads into the kernel it was built for. Same version
+    # number is not enough: the build flags are part of the check, so show
+    # both strings and let the mismatch speak for itself.
+    vm=$(modinfo -F vermagic g_ether 2>/dev/null)
+    if [ -n "$vm" ]; then
+      echo "        built for: $vm" >> "$body"
+      echo "        running:   $(uname -r)" >> "$body"
+    fi
   else
     echo "   [--] g_ether NOT found" >> "$body"
   fi
@@ -356,7 +364,18 @@ LoadGadget() {
   elif lsmod 2>/dev/null | grep -q '^g_ether'; then
     why="g_ether loaded but usb0 never\nappeared. Another gadget may\nalready hold the controller."
   elif [ -n "$err" ]; then
-    why="modprobe failed:\n${err:0:120}"
+    why="modprobe failed:\n${err:0:100}"
+    # "Exec format error" is modprobe shrugging: the kernel refused the
+    # module and only the kernel log says why, almost always a vermagic
+    # mismatch between the module tree and the running kernel. Quote it,
+    # because the user has no terminal to go look.
+    case "$err" in
+      *"Exec format error"*|*"Invalid module format"*)
+        det=$(dmesg 2>/dev/null | grep -iE 'version magic|disagrees about' | tail -1)
+        [ -n "$det" ] && why="$why\n\n${det:0:160}"
+        why="$why\n\nThe module does not match this\nkernel. Your firmware ships a\nkernel its /lib/modules was not\nbuilt for."
+        ;;
+    esac
   else
     why="Unknown. Run option 1 for the\nfull report."
   fi
