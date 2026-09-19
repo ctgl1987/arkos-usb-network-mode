@@ -54,14 +54,30 @@ across the board. The UDC state is the authority.
 
 ## Install
 
-**On the handheld** — copy `USB Network Mode.sh` to `/opt/system/`
-(or `/roms2/tools/` if you use the SD2 layout) and make it executable:
+**With a card reader** — this is the way to do it the first time, and the
+only one that works from Windows. Power the handheld off, take the card
+out and plug it into a PC.
+
+The card has three partitions. Windows shows you two of them: the small
+`BOOT` one and the big `ROMS` one. Open `ROMS` and drop
+`USB Network Mode.sh` into its `tools/` folder (`custom/` also works if
+your firmware has one). That is all — the partition is exFAT and gets
+mounted with `fmask=0000`, so the file is already executable and there is
+nothing to `chmod`.
+
+Do not go looking for `/opt/system` from Windows: that path lives on the
+ext4 root partition, which Windows cannot read, and you would need extra
+software to get at it. The `tools/` folder you can reach is the same one
+the handheld shows in its menu.
+
+**Over the network** — once USB networking works you can skip the card
+reader and copy straight to the handheld:
 
 ```sh
-chmod +x "/opt/system/USB Network Mode.sh"
+scp "USB Network Mode.sh" ark@10.44.44.1:/roms/tools/
 ```
 
-It then shows up in the Options menu. No reboot needed.
+Either way it shows up in the Options menu. No reboot needed.
 
 ```
 option 1  check compatibility     <- run this first
