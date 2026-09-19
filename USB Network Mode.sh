@@ -115,10 +115,16 @@ CompatCheck() {
     # A module only loads into the kernel it was built for. Same version
     # number is not enough: the build flags are part of the check, so show
     # both strings and let the mismatch speak for itself.
+    # Both lines have to be comparable or they prove nothing: uname -r alone
+    # is just the number, and the number is never what differs. The flags are.
     vm=$(modinfo -F vermagic g_ether 2>/dev/null)
     if [ -n "$vm" ]; then
-      echo "        built for: $vm" >> "$body"
-      echo "        running:   $(uname -r)" >> "$body"
+      # match the flag words themselves, not "everything uppercase after the
+      # build number" -- the date that follows starts with a capital too.
+      kflags=$(grep -oE '\b(SMP|PREEMPT(_RT)?)\b' /proc/version 2>/dev/null \
+               | tr '\n' ' ' | sed 's/ *$//')
+      echo "        module: $vm" >> "$body"
+      echo "        kernel: $(uname -r) $kflags" >> "$body"
     fi
   else
     echo "   [--] g_ether NOT found" >> "$body"
