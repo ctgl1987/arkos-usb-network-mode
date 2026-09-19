@@ -368,9 +368,24 @@ StaticIp() {
   return 1
 }
 
+DEV_MAC=42:61:72:6b:6f:53
+HOST_MAC=42:61:72:6b:6f:54
+
 LoadGadget() {
   Busy "Loading USB gadget module..."
-  err=$(sudo modprobe g_ether dev_addr=42:61:72:6b:6f:53 host_addr=42:61:72:6b:6f:54 iProduct=R36S iManufacturer=ArkOS 2>&1)
+  # modprobe succeeds silently on an already-loaded module and throws the new
+  # parameters away, so a gadget left over from an earlier run keeps whatever
+  # address it had -- usually a random one. The PC then sees an adapter whose
+  # MAC changes between sessions, which is exactly what the fixed addresses
+  # exist to prevent. Reload when what is loaded is not what we asked for.
+  if lsmod 2>/dev/null | grep -qw g_ether; then
+    cur=$(cat /sys/class/net/usb0/address 2>/dev/null)
+    if [ "$cur" != "$DEV_MAC" ]; then
+      sudo rmmod g_ether 2>/dev/null
+      sleep 1
+    fi
+  fi
+  err=$(sudo modprobe g_ether dev_addr=$DEV_MAC host_addr=$HOST_MAC iProduct=R36S iManufacturer=ArkOS 2>&1)
   sleep 2
   ip link show usb0 > /dev/null 2>&1 && return 0
 
